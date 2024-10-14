@@ -1,0 +1,5 @@
+Jimmy He, she265@wisc.edu
+Anna Huang, ahuang62@wisc.edu
+Arihan Yadav, apyadav@wisc.edu
+
+During this project stage, the team effectively divided ten SQL query questions among three members, alternating who tackled each question. We collaborated closely, cross-checking and verifying each other's work to ensure accuracy and consistency throughout the process, especially on the final question where we worked together.
