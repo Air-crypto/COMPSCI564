@@ -62,40 +62,34 @@ BufMgr::~BufMgr() {
     delete [] bufPool;
 }
 
-
-const Status BufMgr::allocBuf(int & frame) {
-    unsigned int start = clockHand;
-    while (true) {
+const Status BufMgr::allocBuf(int &frame) {
+    for (int i = 0; i < numBufs; ++i) {
+        clockHand = (clockHand + 1) % numBufs; // Move the clock hand
         BufDesc &desc = bufTable[clockHand];
-        if (desc.valid) {
-            if (desc.refbit) {
-                desc.refbit = false;
-            } else {
-                if (desc.pinCnt == 0) { // Frame is free to be replaced
-                    // If dirty, write back to disk
-                    if (desc.dirty) {
-                        Status status = desc.file->writePage(desc.pageNo, &bufPool[clockHand]);
-                        if (status != OK) return UNIXERR;
-                        desc.dirty = false;
-                    }
-                    // Remove from hash table
-                    hashTable->remove(desc.file, desc.pageNo);
-                    desc.Clear();
-                    frame = clockHand;
-                    advanceClock();
-                    return OK;
-                }
+
+        // Check if the frame is unpinned and can be reused
+        if (desc.pinCnt == 0) {
+            if (desc.valid && desc.dirty) {
+                // If the page is dirty, write it back to disk
+                Status status = desc.file->writePage(desc.pageNo, &bufPool[clockHand]);
+                if (status != OK) return UNIXERR;  // Handle write errors
+                desc.dirty = false;  // Clear the dirty flag
             }
-        } else { // Frame is free
-            frame = clockHand;
-            advanceClock();
-            return OK;
-        }
-        advanceClock();
-        if (clockHand == start) { // Completed a full cycle
-            return BUFFEREXCEEDED;
+
+            // Remove entry from the hash table if the page was valid
+            if (desc.valid) {
+                Status status = hashTable->remove(desc.file, desc.pageNo);
+                if (status != OK) return HASHTBLERROR; // Handle hash table error
+            }
+
+            // Clear the buffer descriptor and return this frame
+            desc.Clear();  // Assuming Clear resets the necessary fields
+            frame = clockHand;  // Output the allocated frame number
+            return OK;  // Successfully allocated buffer
         }
     }
+
+    return BUFFEREXCEEDED;  // All buffers are pinned
 }
 
 const Status BufMgr::readPage(File* file, const int PageNo, Page*& page) {
@@ -235,5 +229,3 @@ void BufMgr::printSelf(void)
         cout << endl;
     };
 }
-
-
