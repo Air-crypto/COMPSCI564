@@ -126,24 +126,27 @@ const Status BufMgr::allocBuf(int &frame) {
 //      - UNIXERR: An error occurred while reading the page from the disk.
 const Status BufMgr::readPage(File* file, const int PageNo, Page*& page) {
     int frameNo;
-    
+
     // Lookup the page in hash table to check if page is in buffer pool
     Status status = hashTable->lookup(file, PageNo, frameNo);
 
     if (status == HASHNOTFOUND) {
         // allocate a new buffer frame if page is not in the buffer pool
         status = allocBuf(frameNo);
-        if (status != OK) return status;
+        if (status != OK) 
+            return status;
 
         // Read the page from disk into the allocated buffer
         status = file->readPage(PageNo, &bufPool[frameNo]);
-        if (status != OK) return UNIXERR; 
+        if (status != OK) 
+            return UNIXERR; 
         // Update the buffer descriptor with file and page
         bufTable[frameNo].Set(file, PageNo);
 
         // Insert the page into the hash table
         status = hashTable->insert(file, PageNo, frameNo);
-        if (status != OK) return HASHTBLERROR; 
+        if (status != OK) 
+            return HASHTBLERROR; 
 
         // Return a pointer to the page 
         page = &bufPool[frameNo];
@@ -167,50 +170,63 @@ const Status BufMgr::readPage(File* file, const int PageNo, Page*& page) {
 //   PageNo - The page number to unpin.
 //   dirty - A boolean indicating whether the page should be marked dirty upon unpinning.
 // Output:
-//   Returns OK if the page was successfully unpinned, otherwise returns an error status.
+//   Returns a status code:
+//   - OK: Page was successfully unpinned and the pin count was decremented.
+//   - HASHNOTFOUND: Page is not found in the buffer pool.
+//   - PAGENOTPINNED: Page is not currently pinned (pin count is 0 or negative).
 const Status BufMgr::unPinPage(File* file, const int PageNo, const bool dirty) {
     int frameNo;
     Status status = hashTable->lookup(file, PageNo, frameNo);
     
-    if (status != OK) return HASHNOTFOUND;  // Page not found in the buffer pool
+    // Page not found in the buffer pool
+    if (status != OK) 
+        return HASHNOTFOUND;  
 
     BufDesc &desc = bufTable[frameNo];
-    if (desc.pinCnt <= 0) return PAGENOTPINNED;  // The page is not pinned
+    if (desc.pinCnt <= 0) 
+        return PAGENOTPINNED;
 
     // Decrease the pin count and mark the page as dirty if requested.
     desc.pinCnt--;
-    if (dirty) desc.dirty = true;
+
+    // If the page should be marked as dirty, set the dirty flag
+    if (dirty) 
+        desc.dirty = true;
 
     return OK;
 }
 
-// Allocates a new page on disk and inserts it into the buffer pool.
+// Allocates a new page on disk, inserts it into the buffer pool, and returns a pointer to the page in the pool.
 // Input:
-//   file - The file where the page is to be allocated.
+//   file   - The file in which the page is to be allocated.
 //   PageNo - A reference to an integer where the newly allocated page number will be stored.
-//   page - A reference to a pointer where the allocated page in the buffer pool will be stored.
+//   page   - A reference to a pointer where the allocated page in the buffer pool will be stored.
 // Output:
-//   Returns OK if the page was successfully allocated and inserted into the buffer pool,
-//   otherwise returns an error status.
+//   Returns a status code:
+//   - OK: Page was successfully allocated on disk and inserted into the buffer pool.
+//   - UNIXERR: Error allocating the page on disk.
+//   - HASHTBLERROR: Error inserting the page into the hash table.
 const Status BufMgr::allocPage(File* file, int& PageNo, Page*& page) {
-    // Allocate a new page on disk.
+    // Allocate a new page on disk
     Status status = file->allocatePage(PageNo);
-    if (status != OK) return UNIXERR;  // Error allocating page on disk
+    if (status != OK) return UNIXERR;  
 
-    // Allocate a buffer frame to store the page.
+    // Allocate a buffer frame to store the page
     int frameNo;
     status = allocBuf(frameNo);
-    if (status != OK) return status;  // Error allocating buffer frame
+    if (status != OK) 
+        return status; 
 
-    // Initialize the buffer frame for the new page.
+    // Initialize the buffer frame for the new page
     bufTable[frameNo].Set(file, PageNo);
     bufPool[frameNo].init(PageNo);
 
-    // Insert the page into the hash table.
+    // Insert the page into the hash table
     status = hashTable->insert(file, PageNo, frameNo);
-    if (status != OK) return HASHTBLERROR;  // Error inserting into hash table
+    if (status != OK) 
+        return HASHTBLERROR;
 
-    // Return a pointer to the newly allocated page in the buffer pool.
+    // Return a pointer to the newly allocated page in the buffer pool
     page = &bufPool[frameNo];
     return OK;
 }
