@@ -2,3 +2,4 @@ Jimmy He, she265@wisc.edu
 Anna Huang, ahuang62@wisc.edu
 Arihan Yadav, apyadav@wisc.edu
 
+Throughout this project, we worked collaboratively on writing, debugging, and testing the code. Each member contributed equally to implementing the functions. We worked closely to debug any issues that arose, helping each other identify and fix problems efficiently. Additionally, we thoroughly tested the code as a team, ensuring that all functions behaved as expected. We also evenly split the task of writing the comments for each function.
