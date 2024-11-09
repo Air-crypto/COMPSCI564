@@ -1,3 +1,13 @@
+/**
+ * @file buf.C
+ * 
+ * Team Members:
+ *  - Anna Huang (9084475889)
+ *  - Arihan Yadav (9085801976)
+ *  - Jimmy He (9083706573)
+ * 
+ * Description: Manages the buffer pool through functions such as page retrieval, allocation, flushing, and page replacement using the clock algorithm. *
+ */
 #include <memory.h>
 #include <unistd.h>
 #include <errno.h>
