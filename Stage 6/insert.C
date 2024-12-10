@@ -21,7 +21,6 @@ const Status QU_Insert(const string & relation,
     RelDesc relDesc;
     status = relCat->getInfo(relation.c_str(), relDesc);
     if (status != OK) {
-        cout << "Error: Relation " << relation << " not found in catalog." << endl;
         return status;
     }
 
@@ -30,13 +29,11 @@ const Status QU_Insert(const string & relation,
     int relAttrCnt;
     status = attrCat->getRelInfo(relation.c_str(), relAttrCnt, attrs);
     if (status != OK) {
-        cout << "Error: Unable to fetch attributes for relation " << relation << endl;
         return status;
     }
 
     // Validate attribute count
     if (attrCnt != relAttrCnt) {
-        cout << "Error: Attribute count mismatch for relation " << relation << endl;
         return ATTRNOTFOUND;
     }
 
@@ -54,9 +51,7 @@ const Status QU_Insert(const string & relation,
         bool matched = false;
         for (int j = 0; j < relAttrCnt; ++j) {
             if (strcmp(attrList[i].attrName, attrs[j].attrName) == 0) {
-                // Verify attribute types match
                 if (attrList[i].attrType != attrs[j].attrType) {
-                    cout << "Error: Type mismatch for attribute " << attrList[i].attrName << endl;
                     delete[] record;
                     return ATTRTYPEMISMATCH;
                 }
@@ -68,7 +63,6 @@ const Status QU_Insert(const string & relation,
             }
         }
         if (!matched) {
-            cout << "Error: Attribute " << attrList[i].attrName << " not found in relation schema." << endl;
             delete[] record;
             return ATTRNOTFOUND;
         }
@@ -77,7 +71,6 @@ const Status QU_Insert(const string & relation,
     // Insert the record using InsertFileScan
     InsertFileScan insertScan(relation, status);
     if (status != OK) {
-        cout << "Error: Unable to open relation " << relation << " for insertion." << endl;
         delete[] record;
         return status;
     }
@@ -88,9 +81,6 @@ const Status QU_Insert(const string & relation,
 
     RID rid;
     status = insertScan.insertRecord(rec, rid);
-    if (status != OK) {
-        cout << "Error: Unable to insert record into relation " << relation << endl;
-    }
 
     // Clean up
     delete[] record;
