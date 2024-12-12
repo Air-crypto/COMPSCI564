@@ -3,3 +3,5 @@ Anna Huang, ahuang62@wisc.edu
 Arihan Yadav, apyadav@wisc.edu
 
 Throughout this project, we worked collaboratively on writing, debugging, and testing the code. Each member contributed equally to implementing the functions. We worked closely to debug any issues that arose, helping each other identify and fix problems efficiently. Additionally, we thoroughly tested the code as a team, ensuring that all functions behaved as expected. We also evenly split the task of writing the comments for each function.
+
+Anna primarily focused on working debugging delete.C. Jimmy primarily focused on debugging insert.C. Arihan primarily focused on debugging select.C. We all assissted each other on debugging the neccesary files and communicated thoroughly while working on fixing errors collaboratively.
