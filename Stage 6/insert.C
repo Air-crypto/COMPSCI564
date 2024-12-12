@@ -1,7 +1,7 @@
 #include "catalog.h"
 #include "query.h"
-#include <cstdlib>  // For atoi and atof
-#include <cstring> // For strlen
+#include <cstdlib>  
+#include <cstring> 
 
 /*
  * Inserts a record into the specified relation.

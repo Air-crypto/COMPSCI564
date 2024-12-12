@@ -20,7 +20,7 @@ const Status QU_Delete(const string &relation,
 
     // If no attribute name is provided, delete all records
     if (attrName.empty()) {
-        std::cout << "Doing QU_Delete" << std::endl;
+        std::cout << "Doing QU_Delete " << std::endl;
 
         // Initialize HeapFileScan for the relation
         HeapFileScan scan(relation, status);
@@ -50,7 +50,7 @@ const Status QU_Delete(const string &relation,
     }
 
     // If an attribute name is provided, delete based on the condition
-    std::cout << "Doing QU_Delete" << std::endl;
+    std::cout << "Doing QU_Delete " << std::endl;
 
     // Fetch attribute description from catalog
     AttrDesc attrDesc;
