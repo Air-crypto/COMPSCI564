@@ -28,7 +28,7 @@ const Status QU_Select(const string & result,
 
     Status status;
     AttrDesc attrDescArray[projCnt];
-    AttrDesc *attrDesc = nullptr;  // We will only allocate this if needed
+    AttrDesc *attrDesc = nullptr;
 
     // Step 1: Fetch metadata for the projection attributes
     for (int i = 0; i < projCnt; ++i) {
@@ -125,7 +125,7 @@ const Status ScanSelect(const string &result,
         } 
         else if (attrDesc->attrType == INTEGER) {
             // Convert filter to INTEGER
-            intFilter = atoi(filter);  // Converts "12" to 12
+            intFilter = atoi(filter);
             status = scan.startScan(attrDesc->attrOffset, attrDesc->attrLen, 
                                     INTEGER, (char *)&intFilter, op);
         } 
@@ -134,6 +134,14 @@ const Status ScanSelect(const string &result,
             return ATTRTYPEMISMATCH;
         }
 
+        if (status != OK) {
+            cerr << "Error: Unable to start scan on relation " << projNames[0].relName << endl;
+            return status;
+        }
+    }
+    // If there is no filter condition, you should start an unconditional scan:
+    else {
+        status = scan.startScan(0, 0, STRING, NULL, EQ);
         if (status != OK) {
             cerr << "Error: Unable to start scan on relation " << projNames[0].relName << endl;
             return status;
@@ -157,32 +165,21 @@ const Status ScanSelect(const string &result,
     // Step 7: Iterate through the records in the relation
     RID rid;
     Record rec;
-    while (scan.scanNext(rid) == OK) {
+    // The scanNext function should be called in the while loop condition, not inside the loop body. This was causing the loop to terminate prematurely.
+    while ((status = scan.scanNext(rid)) == OK) { // Use the status variable to check the scan result
         status = scan.getRecord(rec);
         if (status != OK) {
             cerr << "Error: Unable to fetch record with RID: (" << rid.pageNo << ", " << rid.slotNo << ")" << endl;
-            delete[] projData; // Cleanup before returning
+            delete[] projData;
             return status;
         }
 
         // Step 8: Project attributes into the reusable buffer
         int offset = 0;
         for (int i = 0; i < projCnt; ++i) {
-            if (projNames[i].attrType == STRING) {
-                memcpy(projData + offset, 
-                       reinterpret_cast<char*>(rec.data) + projNames[i].attrOffset,
-                       projNames[i].attrLen);
-            }
-            else if (projNames[i].attrType == FLOAT) {
-                memcpy(projData + offset,
-                       reinterpret_cast<char*>(rec.data) + projNames[i].attrOffset,
-                       projNames[i].attrLen);  // Use proper casting
-            }
-            else if (projNames[i].attrType == INTEGER) {
-                memcpy(projData + offset,
-                       reinterpret_cast<char*>(rec.data) + projNames[i].attrOffset,
-                       projNames[i].attrLen);  // Use proper casting
-            }
+            memcpy(projData + offset, 
+                   reinterpret_cast<char*>(rec.data) + projNames[i].attrOffset,
+                   projNames[i].attrLen);
             offset += projNames[i].attrLen;
         }
 
@@ -195,16 +192,23 @@ const Status ScanSelect(const string &result,
         status = resultRel.insertRecord(projRec, rid);
         if (status != OK) {
             cerr << "Error: Unable to insert projected record." << endl;
-            delete[] projData; // Cleanup before returning
+            delete[] projData;
             return status;
         }
+    }
+
+    // Check if the loop terminated due to an error other than FILEEOF
+    if (status != FILEEOF) {
+        cerr << "Error during scan: " << status << endl;
+        delete[] projData;
+        return status;
     }
 
     // Step 11: End the scan
     status = scan.endScan();
     if (status != OK) {
         cerr << "Error: Unable to end scan on relation " << projNames[0].relName << endl;
-        delete[] projData; // Cleanup before returning
+        delete[] projData;
         return status;
     }
 
