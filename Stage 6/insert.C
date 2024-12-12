@@ -1,6 +1,7 @@
 #include "catalog.h"
 #include "query.h"
-
+#include <cstdlib>  // For atoi and atof
+#include <cstring> // For strlen
 
 /*
  * Inserts a record into the specified relation.
@@ -10,79 +11,122 @@
  * 	an error code otherwise
  */
 
-const Status QU_Insert(const string & relation, 
-	const int attrCnt, 
-	const attrInfo attrList[])
+const Status QU_Insert(const string &relation,
+		const int attrCnt,
+		const attrInfo attrList[])
 {
-// part 6
-    Status status;
+	// part 6
+	std::cout << "Doing QU_Insert " << std::endl;
+	Status status;
 
-    // Fetch relation metadata
-    RelDesc relDesc;
-    status = relCat->getInfo(relation.c_str(), relDesc);
-    if (status != OK) {
-        return status;
-    }
+	// Fetch relation metadata
+	RelDesc relDesc;
+	status = relCat->getInfo(relation.c_str(), relDesc);
+	if (status != OK)
+	{
+		return status;
+	}
 
-    // Fetch attributes for the relation
-    AttrDesc *attrs;
-    int relAttrCnt;
-    status = attrCat->getRelInfo(relation.c_str(), relAttrCnt, attrs);
-    if (status != OK) {
-        return status;
-    }
+	// Fetch attributes for the relation
+	AttrDesc *attrs;
+	int relAttrCnt;
+	status = attrCat->getRelInfo(relation.c_str(), relAttrCnt, attrs);
+	if (status != OK)
+	{
+		return status;
+	}
 
-    // Validate attribute count
-    if (attrCnt != relAttrCnt) {
-        return ATTRNOTFOUND;
-    }
+	// Validate attribute count
+	if (attrCnt != relAttrCnt)
+	{
+		return ATTRNOTFOUND;
+	}
 
-    // Compute record length dynamically
-    int recordLen = 0;
-    for (int i = 0; i < relAttrCnt; ++i) {
-        recordLen += attrs[i].attrLen;
-    }
+	// Compute record length dynamically
+	int recordLen = 0;
+	for (int i = 0; i < relAttrCnt; ++i)
+	{
+		recordLen += attrs[i].attrLen;
+	}
 
-    // Allocate buffer for the new record
-    char *record = new char[recordLen]();
+	// Allocate buffer for the new record
+	char *record = new char[recordLen]();
 
-    // Map input attributes to their correct offsets in the record
-    for (int i = 0; i < attrCnt; ++i) {
-        bool matched = false;
-        for (int j = 0; j < relAttrCnt; ++j) {
-            if (strcmp(attrList[i].attrName, attrs[j].attrName) == 0) {
-                if (attrList[i].attrType != attrs[j].attrType) {
-                    delete[] record;
-                    return ATTRTYPEMISMATCH;
-                }
+	// Map input attributes to their correct offsets in the record
+	for (int i = 0; i < attrCnt; ++i)
+	{
+		bool matched = false;
+		for (int j = 0; j < relAttrCnt; ++j)
+		{
+			if (strcmp(attrList[i].attrName, attrs[j].attrName) == 0)
+			{
+				if (attrList[i].attrType != attrs[j].attrType)
+				{
+					delete[] record;
+					return ATTRTYPEMISMATCH;
+				}
 
-                // Copy the attribute value to the correct offset
-                memcpy(record + attrs[j].attrOffset, attrList[i].attrValue, attrs[j].attrLen);
-                matched = true;
-                break;
-            }
-        }
-        if (!matched) {
-            delete[] record;
-            return ATTRNOTFOUND;
-        }
-    }
+				// Copy the attribute value to the correct offset, handling type conversion
+				switch (attrs[j].attrType)
+				{
+					case INTEGER:
+						{
+							int intValue = atoi(static_cast<const char*>(attrList[i].attrValue));
+							memcpy(record + attrs[j].attrOffset, &intValue, attrs[j].attrLen);
+							break;
+						}
+					case FLOAT:
+						{
+							float floatValue = atof(static_cast<const char*>(attrList[i].attrValue));
+							memcpy(record + attrs[j].attrOffset, &floatValue, attrs[j].attrLen);
+							break;
+						}
+					case STRING:
+						{
+							// Cast to char* and copy the value
+							const char* strValue = static_cast<const char*>(attrList[i].attrValue);
+							size_t len = strlen(strValue);
+							size_t copyLen = std::min(len, (size_t)attrs[j].attrLen); // To avoid buffer overflow
+							memcpy(record + attrs[j].attrOffset, strValue, copyLen);
+							if(copyLen < (size_t)attrs[j].attrLen) {
+								memset(record + attrs[j].attrOffset + copyLen, 0, (size_t)attrs[j].attrLen - copyLen);
+							}
+							break;
 
-    // Insert the record using InsertFileScan
-    InsertFileScan insertScan(relation, status);
-    if (status != OK) {
-        delete[] record;
-        return status;
-    }
+						}
 
-    Record rec;
-    rec.data = record;
-    rec.length = recordLen;
+					default:
+						delete[] record;
+						return ATTRTYPEMISMATCH;
+				}
 
-    RID rid;
-    status = insertScan.insertRecord(rec, rid);
+				matched = true;
+				break;
+			}
+		}
+		if (!matched)
+		{
+			delete[] record;
+			return ATTRNOTFOUND;
+		}
+	}
 
-    // Clean up
-    delete[] record;
-    return status;
+	// Insert the record using InsertFileScan
+	InsertFileScan insertScan(relation, status);
+	if (status != OK)
+	{
+		delete[] record;
+		return status;
+	}
+
+	Record rec;
+	rec.data = record;
+	rec.length = recordLen;
+
+	RID rid;
+	status = insertScan.insertRecord(rec, rid);
+
+	// Clean up
+	delete[] record;
+	return status;
 }
