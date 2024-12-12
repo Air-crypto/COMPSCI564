@@ -1,22 +1,71 @@
 #include "catalog.h"
 #include "query.h"
+#include <cmath>
+#include <cstring>
+#include <iostream>
+#include <new>
 
-// forward declaration
+using namespace std;
+
+static bool applyFilter(const AttrDesc &attrDesc, const Operator op, const char *filterVal, const char *tupleVal) {
+    switch (attrDesc.attrType) {
+        case INTEGER: {
+            int tupleInt;
+            memcpy(&tupleInt, tupleVal, sizeof(int));
+            int filterInt = atoi(filterVal);
+            switch (op) {
+                case EQ: return tupleInt == filterInt;
+                case NE: return tupleInt != filterInt;
+                case GT: return tupleInt > filterInt;
+                case LT: return tupleInt < filterInt;
+                case GTE: return tupleInt >= filterInt;  // Changed to GTE
+                case LTE: return tupleInt <= filterInt;  // Changed to LTE
+                default: return false;
+            }
+        }
+        case FLOAT: {
+            float tupleFloat;
+            memcpy(&tupleFloat, tupleVal, sizeof(float));
+            float filterFloat = atof(filterVal);
+            switch (op) {
+                case EQ: return fabs(tupleFloat - filterFloat) < 1e-6;
+                case NE: return fabs(tupleFloat - filterFloat) > 1e-6;
+                case GT: return tupleFloat > filterFloat;
+                case LT: return tupleFloat < filterFloat;
+                case GTE: return tupleFloat >= filterFloat;  // Changed to GTE
+                case LTE: return tupleFloat <= filterFloat;  // Changed to LTE
+                default: return false;
+            }
+        }
+        case STRING: {
+            char buffer[attrDesc.attrLen + 1];
+            memcpy(buffer, tupleVal, attrDesc.attrLen);
+            buffer[attrDesc.attrLen] = '\0';
+            int cmp = strcmp(buffer, filterVal);
+            switch (op) {
+                case EQ: return (cmp == 0);
+                case NE: return (cmp != 0);
+                case GT: return (cmp > 0);
+                case LT: return (cmp < 0);
+                case GTE: return (cmp >= 0);  // Changed to GTE
+                case LTE: return (cmp <= 0);  // Changed to LTE
+                default: return false;
+            }
+        }
+        default:
+            return false;
+    }
+}
+
+// Forward declaration
 const Status ScanSelect(const string & result, 
                         const int projCnt, 
                         const AttrDesc projNames[],
                         const AttrDesc *attrDesc, 
                         const Operator op, 
-                        const char *filter,
+                        const char *attrValue,
                         const int reclen);
 
-/*
- * Selects records from the specified relation.
- *
- * Returns:
- * 	OK on success
- * 	an error code otherwise
- */
 const Status QU_Select(const string & result, 
                        const int projCnt, 
                        const attrInfo projNames[],
@@ -53,7 +102,6 @@ const Status QU_Select(const string & result,
     } else {
         // Step 4: If condition is specified, fetch metadata for the condition attribute
         attrDesc = new AttrDesc;
-
         status = attrCat->getInfo(attr->relName, attr->attrName, *attrDesc);
         if (status != OK) {
             delete attrDesc;
@@ -65,13 +113,6 @@ const Status QU_Select(const string & result,
     return ScanSelect(result, projCnt, attrDescArray, attrDesc, op, attrValue, resultRecLen);
 }
 
-/*
- * Performs the scan and selection on the specified relation.
- *
- * Returns:
- * 	OK on success
- * 	an error code otherwise
- */
 const Status ScanSelect(const string &result,
                         const int projCnt,
                         const AttrDesc projNames[],
@@ -84,12 +125,12 @@ const Status ScanSelect(const string &result,
 
     Status status;
 
-    // Step 1: Validate record length
+    // Validate record length
     if (reclen <= 0) {
         return INVALIDRECLEN;
     }
 
-    // Step 2: Validate attribute metadata
+    // Validate attribute metadata
     for (int i = 0; i < projCnt; ++i) {
         if (projNames[i].attrLen <= 0) {
             cerr << "Error: Invalid attribute length for attribute " 
@@ -98,75 +139,76 @@ const Status ScanSelect(const string &result,
         }
     }
 
-    // Step 3: Initialize HeapFileScan for the input relation
-    HeapFileScan scan(projNames[0].relName, status);
+    // Determine the relation to scan (based on the first projected attribute)
+    const string &scanRel = projNames[0].relName;
+
+    // Initialize HeapFileScan for the input relation
+    HeapFileScan scan(scanRel, status);
     if (status != OK) {
-        cerr << "Error: Unable to initialize scan on relation " << projNames[0].relName << endl;
+        cerr << "Error: Unable to initialize scan on relation " << scanRel << endl;
         return status;
     }
 
-    // Step 4: If a filter (WHERE clause) is specified, set the filter condition
-    if (attrDesc != nullptr) {
-        cout << "Applying filter on " << attrDesc->attrName << endl;
+    bool manualFiltering = false;
 
-        int intFilter;
-        float floatFilter;
-
-        if (attrDesc->attrType == STRING) {
-            // For STRING, use as-is
-            status = scan.startScan(attrDesc->attrOffset, attrDesc->attrLen, 
-                                    STRING, filter, op);
-        } 
-        else if (attrDesc->attrType == FLOAT) {
-            // Convert filter to FLOAT
-            floatFilter = atof(filter);
-            status = scan.startScan(attrDesc->attrOffset, attrDesc->attrLen, 
-                                    FLOAT, (char *)&floatFilter, op);
-        } 
-        else if (attrDesc->attrType == INTEGER) {
-            // Convert filter to INTEGER
-            intFilter = atoi(filter);
-            status = scan.startScan(attrDesc->attrOffset, attrDesc->attrLen, 
-                                    INTEGER, (char *)&intFilter, op);
-        } 
-        else {
-            cerr << "Error: Unsupported attribute type in filter." << endl;
-            return ATTRTYPEMISMATCH;
-        }
-
-        if (status != OK) {
-            cerr << "Error: Unable to start scan on relation " << projNames[0].relName << endl;
-            return status;
-        }
-    }
-    // If there is no filter condition, you should start an unconditional scan:
-    else {
+    // If no attribute condition, do unconditional scan
+    if (attrDesc == nullptr) {
         status = scan.startScan(0, 0, STRING, NULL, EQ);
         if (status != OK) {
-            cerr << "Error: Unable to start scan on relation " << projNames[0].relName << endl;
+            cerr << "Error: Unable to start unconditional scan on relation " << scanRel << endl;
             return status;
+        }
+    } else {
+        cout << "Applying filter on " << attrDesc->attrName << endl;
+
+        // We only directly apply EQ filters via startScan
+        if (op == EQ) {
+            // Convert filter based on type and startScan
+            if (attrDesc->attrType == STRING) {
+                // STRING filter
+                status = scan.startScan(attrDesc->attrOffset, attrDesc->attrLen, STRING, (char *)filter, EQ);
+            } else if (attrDesc->attrType == FLOAT) {
+                float floatFilter = atof(filter);
+                status = scan.startScan(attrDesc->attrOffset, attrDesc->attrLen, FLOAT, (char *)&floatFilter, EQ);
+            } else if (attrDesc->attrType == INTEGER) {
+                int intFilter = atoi(filter);
+                status = scan.startScan(attrDesc->attrOffset, attrDesc->attrLen, INTEGER, (char *)&intFilter, EQ);
+            } else {
+                cerr << "Error: Unsupported attribute type in filter." << endl;
+                return ATTRTYPEMISMATCH;
+            }
+            if (status != OK) {
+                cerr << "Error: Unable to start scan on relation " << scanRel << " with equality filter." << endl;
+                return status;
+            }
+        } else {
+            // For non-EQ operators, start an unconditional scan and do manual filtering
+            status = scan.startScan(0, 0, STRING, NULL, EQ);
+            if (status != OK) {
+                cerr << "Error: Unable to start unconditional scan on relation " << scanRel << endl;
+                return status;
+            }
+            manualFiltering = true;
         }
     }
 
-    // Step 5: Open the result file for inserting the projected tuples
+    // Open the result file for inserting the projected tuples
     InsertFileScan resultRel(result, status);
     if (status != OK) {
         cerr << "Error: Unable to open result file for inserting records." << endl;
         return status;
     }
 
-    // Step 6: Allocate a reusable buffer for projected data
+    // Allocate a reusable buffer for projected data
     char *projData = new (nothrow) char[reclen];
     if (!projData) {
         cerr << "Error: Insufficient memory to allocate projection buffer." << endl;
         return INSUFMEM;
     }
 
-    // Step 7: Iterate through the records in the relation
     RID rid;
     Record rec;
-    // The scanNext function should be called in the while loop condition, not inside the loop body. This was causing the loop to terminate prematurely.
-    while ((status = scan.scanNext(rid)) == OK) { // Use the status variable to check the scan result
+    while ((status = scan.scanNext(rid)) == OK) {
         status = scan.getRecord(rec);
         if (status != OK) {
             cerr << "Error: Unable to fetch record with RID: (" << rid.pageNo << ", " << rid.slotNo << ")" << endl;
@@ -174,45 +216,49 @@ const Status ScanSelect(const string &result,
             return status;
         }
 
-        // Step 8: Project attributes into the reusable buffer
-        int offset = 0;
-        for (int i = 0; i < projCnt; ++i) {
-            memcpy(projData + offset, 
-                   reinterpret_cast<char*>(rec.data) + projNames[i].attrOffset,
-                   projNames[i].attrLen);
-            offset += projNames[i].attrLen;
+        bool match = true;
+        if (manualFiltering && attrDesc != nullptr && filter != nullptr) {
+            // Manually apply the filter
+            const char* tupleVal = (char*)rec.data + attrDesc->attrOffset;
+            match = applyFilter(*attrDesc, op, filter, tupleVal);
         }
 
-        // Step 9: Create a record structure for the projected tuple
-        Record projRec;
-        projRec.data = projData;
-        projRec.length = reclen;
+        if (match) {
+            // Project attributes into the buffer
+            int offset = 0;
+            for (int i = 0; i < projCnt; ++i) {
+                memcpy(projData + offset,
+                       (char*)rec.data + projNames[i].attrOffset,
+                       projNames[i].attrLen);
+                offset += projNames[i].attrLen;
+            }
 
-        // Step 10: Insert the projected record into the result file
-        status = resultRel.insertRecord(projRec, rid);
-        if (status != OK) {
-            cerr << "Error: Unable to insert projected record." << endl;
-            delete[] projData;
-            return status;
+            Record projRec;
+            projRec.data = projData;
+            projRec.length = reclen;
+
+            status = resultRel.insertRecord(projRec, rid);
+            if (status != OK) {
+                cerr << "Error: Unable to insert projected record." << endl;
+                delete[] projData;
+                return status;
+            }
         }
     }
 
-    // Check if the loop terminated due to an error other than FILEEOF
     if (status != FILEEOF) {
         cerr << "Error during scan: " << status << endl;
         delete[] projData;
         return status;
     }
 
-    // Step 11: End the scan
     status = scan.endScan();
     if (status != OK) {
-        cerr << "Error: Unable to end scan on relation " << projNames[0].relName << endl;
+        cerr << "Error: Unable to end scan on relation " << scanRel << endl;
         delete[] projData;
         return status;
     }
 
-    // Step 12: Free the reusable buffer
     delete[] projData;
     return OK;
 }
